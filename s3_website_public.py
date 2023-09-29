@@ -11,7 +11,7 @@ class S3WebsitePublic:
     @staticmethod
     def create_architecture(environment, project_name, s3_cors_rules, prefix, certificate,
                             app_url, cloudflare_zone_id, route53_zone_id,
-                            cloudfront_bucket_log, price_class):
+                            cloudfront_bucket_log, price_class, tags):
 
         resource_name = f"{prefix}{project_name}"
 
@@ -19,7 +19,8 @@ class S3WebsitePublic:
             project_name=project_name,
             s3_cors_rules=s3_cors_rules,
             environment=environment,
-            prefix=prefix
+            prefix=prefix,
+            tags=tags
         )
 
         statements = [aws.iam.GetPolicyDocumentStatementArgs(
@@ -94,7 +95,8 @@ class S3WebsitePublic:
             log_bucket=cloudfront_bucket_log,
             aliases=[app_url],
             behaviors=behaviors,
-            price_class=price_class
+            price_class=price_class,
+            tags=tags
         )
 
         DNS.create_resources(
@@ -105,12 +107,13 @@ class S3WebsitePublic:
             dns_value=cdn_dns
         )
 
-        PageRule.create_page_rule(
-            name=f"{resource_name}-cache",
-            zone_id=cloudflare_zone_id,
-            target=f"{app_url}/*",
-            actions={
-                "cache_level": "bypass"
-            },
-            status="active"
-        )
+        if cloudflare_zone_id:
+            PageRule.create_page_rule(
+                name=f"{resource_name}-cache",
+                zone_id=cloudflare_zone_id,
+                target=f"{app_url}/*",
+                actions={
+                    "cache_level": "bypass"
+                },
+                status="active"
+            )
