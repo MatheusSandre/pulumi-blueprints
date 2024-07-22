@@ -10,7 +10,7 @@ from cloudflare_pagerule import PageRule
 class S3WebsitePublic:
     @staticmethod
     def create_architecture(environment, project_name, s3_cors_rules, prefix, certificate,
-                            app_url, cloudflare_zone_id, route53_zone_id,
+                            app_urls, cloudflare_zone_id, route53_zone_id,
                             cloudfront_bucket_log, price_class):
 
         resource_name = f"{prefix}{project_name}"
@@ -92,25 +92,26 @@ class S3WebsitePublic:
             certificate=certificate,
             origins=origins,
             log_bucket=cloudfront_bucket_log,
-            aliases=[app_url],
+            aliases=app_urls,
             behaviors=behaviors,
             price_class=price_class
         )
 
-        DNS.create_resources(
-            app_url=app_url,
-            cf_zone_id=cloudflare_zone_id,
-            route53_zone_id=route53_zone_id,
-            dns_type="CNAME",
-            dns_value=cdn_dns
-        )
+        for app_url in app_urls:
+            DNS.create_resources(
+                app_url=app_url,
+                cf_zone_id=cloudflare_zone_id,
+                route53_zone_id=route53_zone_id,
+                dns_type="CNAME",
+                dns_value=cdn_dns
+            )
 
-        PageRule.create_page_rule(
-            name=f"{resource_name}-cache",
-            zone_id=cloudflare_zone_id,
-            target=f"{app_url}/*",
-            actions={
-                "cache_level": "bypass"
-            },
-            status="active"
-        )
+            PageRule.create_page_rule(
+                name=f"{resource_name}-cache",
+                zone_id=cloudflare_zone_id,
+                target=f"{app_url}/*",
+                actions={
+                    "cache_level": "bypass"
+                },
+                status="active"
+            )
