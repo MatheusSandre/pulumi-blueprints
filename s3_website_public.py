@@ -97,9 +97,9 @@ class S3WebsitePublic:
             price_class=price_class
         )
 
-        for app_url in app_urls:
+        for url in app_urls:
             DNS.create_resources(
-                app_url=app_url,
+                app_url=url,
                 cf_zone_id=cloudflare_zone_id,
                 route53_zone_id=route53_zone_id,
                 dns_type="CNAME",
@@ -109,7 +109,7 @@ class S3WebsitePublic:
             PageRule.create_page_rule(
                 name=f"{resource_name}-cache",
                 zone_id=cloudflare_zone_id,
-                target=f"{app_url}/*",
+                target=f"{url}/*",
                 actions={
                     "cache_level": "bypass"
                 },
