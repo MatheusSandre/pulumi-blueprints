@@ -101,13 +101,14 @@ class S3WebsitePublic:
 
         for url in app_urls:
             if url != "app.bemanager.com.br":
-                DNS.create_resources(
-                    app_url=url,
-                    cf_zone_id=cloudflare_zone_id,
-                    route53_zone_id=route53_zone_id,
-                    dns_type="CNAME",
-                    dns_value=cdn_dns
-                )
+                if cloudflare_zone_id:
+                    DNS.create_resources(
+                        app_url=url,
+                        cf_zone_id=cloudflare_zone_id,
+                        route53_zone_id=route53_zone_id,
+                        dns_type="CNAME",
+                        dns_value=cdn_dns
+                    )
 
                 if cloudflare_zone_id:
                     PageRule.create_page_rule(
