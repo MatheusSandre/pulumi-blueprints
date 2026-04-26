@@ -1,11 +1,27 @@
+import pulumi
 import pulumi_aws as aws
 
 from block_s3_cloudfront import S3Cloudfront
 from block_cloudfront_cdn import CDN
 from block_dns import DNS
 from aws_s3 import S3
+from aws_cloudfront import Cloudfront
 
 from cloudflare_pagerule import PageRule
+
+SPA_ROUTING_FUNCTION = """
+function handler(event) {
+    var request = event.request;
+    var uri = request.uri;
+    if (uri.endsWith('/')) {
+        request.uri += 'index.html';
+    } else if (!uri.includes('.')) {
+        request.uri = '/index.html';
+    }
+    return request;
+}
+"""
+
 
 class S3WebsitePublic:
     @staticmethod
@@ -23,23 +39,12 @@ class S3WebsitePublic:
             tags=tags
         )
 
-        statements = [aws.iam.GetPolicyDocumentStatementArgs(
-            effect="Allow",
-            principals=[aws.iam.GetPolicyDocumentStatementPrincipalArgs(
-                type="AWS",
-                identifiers=[s3_cloudfront["origin_access_identity"].iam_arn],
-            )],
-            actions=[
-                "s3:GetObject"
-            ],
-            resources=[
-                s3_cloudfront["bucket"].arn.apply(lambda arn: f"{arn}/*"),
-            ],
-        )]
-
-        S3.create_policy_bucket(
-            bucket_name=f"{resource_name}",
-            statements=statements
+        spa_function = Cloudfront.create_function(
+            name=f"{resource_name}-spa-routing",
+            code=SPA_ROUTING_FUNCTION,
+            comment=f"SPA routing for {resource_name}",
+            runtime="cloudfront-js-2.0",
+            publish=True
         )
 
         ######### Cloudfront #########
@@ -47,9 +52,9 @@ class S3WebsitePublic:
         origins = [
             {
                 "type": "s3",
-                "dns": s3_cloudfront["bucket"].bucket_domain_name,
+                "dns": s3_cloudfront["bucket"].bucket_regional_domain_name,
                 "name": project_name,
-                "access_identity": s3_cloudfront["origin_access_identity"].cloudfront_access_identity_path,
+                "access_control_id": s3_cloudfront["origin_access_control"].id,
                 "origin_shield_enabled": False,
                 "origin_shield_region": "us-east-1"
             }
@@ -76,6 +81,12 @@ class S3WebsitePublic:
             max_ttl=0,
             target_origin_id=f"s3-{resource_name}-{project_name}",
             viewer_protocol_policy="redirect-to-https",
+            function_associations=[
+                aws.cloudfront.DistributionDefaultCacheBehaviorFunctionAssociationArgs(
+                    event_type="viewer-request",
+                    function_arn=spa_function.arn,
+                )
+            ],
         )
 
         ordered_cache_behaviors = []
@@ -86,7 +97,7 @@ class S3WebsitePublic:
             "custom_responses": custom_error_responses
         }
 
-        cdn_dns = CDN.create_cdn(
+        distribution = CDN.create_cdn(
             prefix=prefix,
             project_name=project_name,
             environment=environment,
@@ -99,12 +110,33 @@ class S3WebsitePublic:
             tags=tags
         )
 
+        bucket_policy_statements = [aws.iam.GetPolicyDocumentStatementArgs(
+            sid="AllowCloudFrontServicePrincipalRead",
+            effect="Allow",
+            principals=[aws.iam.GetPolicyDocumentStatementPrincipalArgs(
+                type="Service",
+                identifiers=["cloudfront.amazonaws.com"],
+            )],
+            actions=["s3:GetObject"],
+            resources=[s3_cloudfront["bucket"].arn.apply(lambda arn: f"{arn}/*")],
+            conditions=[aws.iam.GetPolicyDocumentStatementConditionArgs(
+                test="StringEquals",
+                variable="AWS:SourceArn",
+                values=[distribution.arn],
+            )],
+        )]
+
+        S3.create_policy_bucket(
+            bucket_name=f"{resource_name}",
+            statements=bucket_policy_statements
+        )
+
         DNS.create_resources(
             app_url=app_url,
             cf_zone_id=cloudflare_zone_id,
             route53_zone_id=route53_zone_id,
             dns_type="CNAME",
-            dns_value=cdn_dns
+            dns_value=distribution.domain_name
         )
 
         if cloudflare_zone_id:
